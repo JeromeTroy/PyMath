@@ -9,6 +9,11 @@ Created on Sun Aug 25 16:02:07 2019
 import numpy as np
 import numpy.linalg as la
 import matplotlib.pyplot as plt
+import scipy.integrate as ode
+
+from nonlinsolve import newton
+from nonlinsolve import secant
+from nonlinsolve import gradient_descent
 
 def forward_euler(fun, init, tspan, num_nodes):
     """
@@ -24,12 +29,16 @@ def forward_euler(fun, init, tspan, num_nodes):
         vals - y values at time nodes
     """
     
+    init = np.array(init)
+    m = len(init)
+    
     time = np.linspace(tspan[0], tspan[1], num_nodes)
     dt = (tspan[1] - tspan[0]) / num_nodes
-    vals = np.zeros(np.shape(time))
-    vals[0] = init
+    
+    vals = np.zeros([m, num_nodes])
+    vals[:, 0] = init
     for i in range(num_nodes - 1):
-        vals[i + 1] = vals[i] + dt * fun(time[i], vals[i])
+        vals[:, i + 1] = vals[:, i] + dt * fun(time[i], vals[:, i])
     
     return [time, vals]
 
@@ -51,6 +60,7 @@ def ode12(fun, init, tspan, tol=1e-5):
     final_time = tspan[1]
     
     times = [cur_time]
+    init = np.array(init)
     vals = [init]
     
     step = (tspan[1] - tspan[0]) / 100
@@ -61,7 +71,8 @@ def ode12(fun, init, tspan, tol=1e-5):
         stage1 = fun(cur_time, vals[-1])
         stage2 = fun(cur_time + 0.5 * step, vals[-1] + 0.5 * step * stage1)
         
-        lte = np.abs(stage2 - stage1)
+
+        lte = np.linalg.norm(stage2 - stage1)
         
         if lte > tol:
             step /= 2
@@ -87,39 +98,11 @@ def ode12(fun, init, tspan, tol=1e-5):
         vals.append(final_vals)
         times.append(final_time)
     
+    vals = np.array(vals)
+    times = np.array(times)
     return [times, vals]
 
-def polyinterp(x_nodes, y_values, new_nodes):
-    """
-    Polynomial interpolation using the second barycentric form
-    
-    Input:
-        x_nodes - x nodes of original data
-        y_values - original function values
-        new_nodes - points to interpolate at
-    Output:
-        new_yvals - interpolated y values
-    """
-    
-    weights = np.ones(len(x_nodes))
-    for j in range(len(x_nodes)):
-        for k in range(len(x_nodes)):
-            if k == j:
-                continue
-            else:
-                weights[j] /= (x_nodes[j] - x_nodes[k])
-    
-    new_yvals = np.zeros(len(new_nodes))
-    
-    for l in range(len(new_nodes)):
-        if new_nodes[l] in x_nodes:
-            new_yvals[l] = y_values[x_nodes == new_nodes[l]]
-        else:
-            numerator = np.sum(weights * y_values / (new_nodes[l] - x_nodes))
-            denominator = np.sum(weights / (new_nodes[l] - x_nodes))
-            new_yvals[l] = numerator / denominator
-            
-    return new_yvals
+
 
 def deriv(x, y):
     """
@@ -184,111 +167,6 @@ def deriv2(x, y):
             (x[-2] - x[-1]) * (x[-3] - x[-1]))
     
     return d2ydx2
-
-def newton(fun, x0, tol=1e-5, maxiter=100):
-    """
-    Newtons method for finding function zero
-    
-    Input:
-        fun - callable function to solve = 0
-        x0 - initial guess
-    Optional:
-        tol - tolerance allowed, default value 1e-5
-        maxiter - maximum allowed iterations, default value 100
-    Output:
-        xf - final guess value
-        x - all guessed values
-    """
-    
-    x = [x0]
-    error = tol + 1
-    iterat = 0
-    while error > tol and iterat < maxiter:
-        deriv = (fun(x[-1] + tol) - fun(x[-1] - tol)) / (2 * tol)
-        xf = x[-1] - fun(x[-1]) / deriv
-        
-        error = np.abs(fun(xf))
-        iterat += 1
-        x.append(xf)
-    
-    if iterat == maxiter:
-        print("Warning, maximum number of iterations reached")
-    
-    x = np.array(x)
-    return [xf, x]
-
-def secant(fun, x0, x1=None, tol=1e-5, maxiter=100):
-    """
-    Secant method for finding function zero
-    
-    Input:
-        fun - callable function in question
-        x0 - first initial guess
-    Optional:
-        x1 - second initial guess
-            if not given, computed via newton iteration
-        tol - tolerance value, default 1e-5
-        maxiter - maximum number of iterations allowed, default 100
-    Output:
-        xf - final guess value
-        x - all nodes used
-    """
-    
-    if x1 == None:
-        deriv = (fun(x0 + tol) - fun(x0 - tol)) / (2 * tol)
-        x1 = x0 - fun(x0) / deriv
-        return secant(fun, x0, x1=x1, tol=tol, maxiter=maxiter)
-    else:
-        x = [x0, x1]
-        error = tol + 1
-        iterat = 0
-        while error > tol and iterat < maxiter:
-            xf = x[-1] - (fun(x[-1]) * (x[-1] - x[-2])) / (
-                    fun(x[-1]) - fun(x[-2]))
-            error = np.abs(fun(xf))
-            iterat += 1
-            x.append(xf)
-        x = np.array(x)
-        
-        if iterat == maxiter:
-            print("Warning, maximum number of iterations reached")
-        return [xf, x]
-        
-def gradient_descent(fun, x0, step, tol=1e-5, maxiter=100):
-    """
-    Standard gradient descent
-    
-    Input:
-        fun - callable function to be minimized
-        x0 - initial guess
-        step - step size
-    Optional:
-        tol - allowed tolerance, default 1e-5
-        maxiter - maximum number of iterations, default 100
-    Output:
-        xf - final position of minimum
-        x - list of used values
-    """
-    
-    x = [x0]
-    error = tol + 1
-    iterat = 0
-    
-    while error > tol and iterat < maxiter:
-        deriv = (fun(x[-1] + tol) - fun(x[-1] - tol)) / (2 * tol)
-        xf = x[-1] - step * deriv
-        if fun(xf) >= fun(x[-1]):
-            step /= 2
-            continue
-        
-        error = np.abs(xf - x[-1])
-        iterat += 1
-        x.append(xf)
-    
-    if iterat == maxiter:
-        print("Warning, maximum number of iterations reached")
-    x = np.array(x)
-    return [xf, x]
 
 def backward_euler(fun, init, tspan, num_nodes):
     """
@@ -486,3 +364,40 @@ def compute_weights(x, cur_index, index_range, derivative_wanted):
     
     return weights
 
+
+
+def odefun(t, x):
+    
+    beta = 2
+    gamma = 1
+    f = np.sin(2 * np.pi * t)
+    
+    der = np.zeros(np.shape(x))
+    der[0] = x[1]
+    
+    der[1] = f - beta * x[1] - gamma * x[0]
+    
+    return der
+
+
+y0 = np.array([0, 1])
+tspan = [0, 10]
+
+sol = ode.solve_ivp(odefun, tspan, y0)
+
+[my_time, my_sol] = ode12(odefun, y0, tspan, tol=1e-2)
+time = sol.t
+y = sol.y
+
+my_y = my_sol[:, 0]
+
+plt.figure()
+
+plt.plot(time, y[0,:], label="scipy")
+plt.plot(my_time, my_y, label="mine")
+
+plt.xlabel('t')
+plt.ylabel('y(t)')
+plt.legend()
+
+plt.show()

@@ -1,4 +1,4 @@
-# Mathematical functions for numerics in Python
+# Mathematical functions for numerics in Python and Julia
 
 This project is for educational and experimental purposes only.  
 The hope is that these functions are easy enough to understand 
