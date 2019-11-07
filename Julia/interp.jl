@@ -1,4 +1,4 @@
-module interpolation
+module Interpolation
 using LinearAlgebra
 
 function polyinterp(xnodes, yvals, newnodes)
