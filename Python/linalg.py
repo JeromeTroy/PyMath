@@ -20,6 +20,41 @@ import numpy as np
 import numpy.linalg as la
 import matplotlib.pyplot as plt
 
+def get_length(vec):
+    """
+    Wrapper for getting length of vector that may have length 1
+
+    Input:
+        vec
+    Output:
+        n - length of the vector
+    """
+    try:
+        n = len(vec)
+    except TypeError:
+        # scalar
+        n = 1
+    return n
+
+def matmul(m1, m2):
+    """
+    Matrix multiplication wrapper to deal with vector * scalar
+    
+    Input:
+        m1, m2 - numpy arrays
+    Output:
+        m - resulting matrix
+    """
+
+    # numpy matrix multiplication
+    try:
+        m = m1 @ m2
+    except:
+        m = m1 * m2
+
+    return m
+
+
 def backward_substitute(R, b):
     """
     Backward substitution for an upper triangular system
@@ -43,7 +78,7 @@ def backward_substitute(R, b):
         print("Error, rectangular solution not yet implemented")
         return None
 
-    x = np.zeros([m, 1])
+    x = np.zeros(m)
 
     mult_diag = np.prod(np.diag(R))
     if mult_diag == 0:
@@ -69,11 +104,11 @@ def jacobi_method(R, b, x0=None, tol=1e-5, maxiter=500):
         x - solution to Rx = b, m x 1
 
     Note: this method currently assumes R is invertible
+    Needs to be updated
     """
 
     D = np.diagflat(np.diag(R))
     Dn = np.diagflat(1.0 / np.diag(R))
-    print(Dn)
     C = R - D
 
     if type(x0) == None:
@@ -151,7 +186,7 @@ def householder_triangulation_solve(A, b):
     return x
 
 
-def linsolve(A, b):
+def qr_solve(A, b):
     """
     Solve the linear system Ax = b
 
@@ -197,7 +232,7 @@ def build_vandermonde(x, max_power):
 
 def linalg_solve(A, b):
     """
-    Wrapper for solving a linear system
+    Wrapper/dispatcher for solving a linear system
 
     Input:
         A - matrix to invert
@@ -205,39 +240,48 @@ def linalg_solve(A, b):
     Output:
         x - solution to Ax = b
     """
-
-    [m, n] = np.shape(A)
+    l = get_length(b)
     try:
-        l = len(b)
-    except TypeError:
-        l = 1
+        [m, n] = np.shape(A)
+    except ValueError:
+        Atmp = np.matrix(A)
+        [m, n] = np.shape(Atmp)
     if l != m:
         print("Error, right hand side of wrong shape")
         return None
-    else:   # may be able to solve, begin dispatcher
-        b = np.matrix(b)
-        [l,k] = np.shape(b)
-        if l == 1:
-            b = np.transpose(b)
 
-        if m == n:
-            # square system, apply standard solver
-            x = la.solve(A, b)
-        elif n == 1:
-            # normal equations scalar - can solve easily
-            AtA = np.matmul(A.T, A)
-            Atb = np.matmul(A.T, b)
-            x = Atb / AtA
-        elif m > n:
-            # more equations than unknown, use qr
-            [Q, R] = la.qr(A)
-            z = np.matmul(Q.T, np.transpose(np.matrix(b)))
-            x = backward_substitute(R, z)
+    else:   # may be able to solve, begin dispatcher
+        if n == 1 and m == 1:
+            # scalar x scalar = scalar
+            x = b / A
+        elif n == 1 and m != 1:
+            # vector x scalar = vector
+            x = la.norm(b) / la.norm(A)
+
         else:
-            # m < n more unknowns than equations, use SVD
-            [U, S, V] = la.svd(A)
-            z = np.matmul(np.transpose(U), b)
-            y = np.zeros([n,1])
-            y[:m] = z / np.transpose(np.matrix(S))
-            x = np.matmul(np.transpose(V), y)
+            # matrix x vector = vector
+
+            if m == n:
+                # square system, apply standard solver, won't complain
+                x = la.solve(A, b)
+
+            elif m > n:
+                # more equations than unknown, use qr
+                [Q, R] = la.qr(A)
+                z = matmul(Q.T, b)
+                x = backward_substitute(R, z)
+
+            else:
+                # m < n more unknowns than equations, use SVD
+                try:
+                    [U, S, V] = la.svd(A)
+                except la.LinAlgError:
+                    A = np.reshape(A, [1, len(A)])
+                    [U, S, V] = la.svd(A)
+                # here S is a list of the singular values
+                z = matmul(U.T, b)
+                y = np.zeros(n)
+                y[:m] = z / S           # pointwise division 
+                x = matmul(V.T , y)
+
         return x

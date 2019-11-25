@@ -8,9 +8,43 @@ Created on Fri Sep 06 10:51:00 2019
 
 import numpy as np
 import numpy.linalg as la
+
 import linalg as mla
 
-def newton(fun, x0, dfdx=None, tol=1e-7, maxiter=100):
+class Minimizer():
+	"""
+	Return class for minimization and rootfinding algorithms
+	"""
+
+	def __init__(self):
+		self._x = None
+		self._xprev = []
+		self._n = -1
+		self._algorithm = ""
+
+	def get_optimizer(self):
+		return self._x
+
+	def get_previous_attemps(self):
+		return np.array(self._xprev)
+
+	def get_number_iterations(self):
+		return self._n
+
+	def get_which_algorithm(self):
+		return self._algorithm
+
+	def set_algorithm(self, alg):
+		self._algorithm = alg
+
+	def add_iter(self, x):
+		self._n += 1
+		self._x = np.array(x)
+		self._xprev.append(np.array(x))
+
+
+
+def newton(fun, x0, dfdx=None, tol=1e-7, maxiter=100, record=False):
     """
     Newtons method for finding function zero
 
@@ -26,41 +60,48 @@ def newton(fun, x0, dfdx=None, tol=1e-7, maxiter=100):
         x - all guessed values
     """
 
-    x = [x0]
-    try:
-        n = len(x0)
-        is_scalar = (n == 1)
-    except TypeError:
-        is_scalar = True
+    x = x0
+    if record:
+    	result = Minimizer()
+    	result.add_iter(x)
+    	result.set_algorithm("newton")
 
-    error = [np.inf]
+    n = mla.get_length(x)
+
+    error = np.inf
     delta_x = np.inf
     iterat = 0
-    while error[-1] > tol and iterat < maxiter and delta_x > tol:
+
+    while error > tol and iterat < maxiter and delta_x > tol:
+
+        # compute jacobian
         if dfdx is not None:
-            jac = dfdx(x[-1])
-        elif is_scalar:
-            deriv = (fun(x[-1] + tol) - fun(x[-1] - tol)) / (2 * tol)
-            xf = x[-1] - fun(x[-1]) / deriv
-            error.append(np.abs(fun(xf)))
-            delta_x = np.abs(x[-1] - xf)
+            jac = dfdx(x)
         else:
-            jac = fdjac(fun, x[-1])
-            delta = mla.linalg_solve(jac, -fun(x[-1]))
-            xf = x[-1] + delta
-            error.append(np.max(np.abs(fun(xf))))
-            delta_x = np.max(np.abs(delta))
+        	jac = fdjac(fun, x)
+    	
+        delta = mla.linalg_solve(jac, -fun(x))
+        xf = x + delta
+
+        error = np.max(np.abs(fun(xf)))
+
+        delta_x = np.max(np.abs(delta))
 
         iterat += 1
-        x.append(xf)
+        x = xf
+
+        if record:
+            result.add_iter(x)
 
     if iterat == maxiter:
         print("Warning, maximum number of iterations reached")
 
-    error = np.array(error)
-    return [xf, x, error]
+    if not record:
+        result = x
 
-def secant(fun, x0, x1=None, tol=1e-5, maxiter=100):
+    return result
+
+def secant_scalar(fun, x0, x1=None, tol=1e-5, maxiter=100, record=False):
     """
     Secant method for finding function zero
 
@@ -78,24 +119,42 @@ def secant(fun, x0, x1=None, tol=1e-5, maxiter=100):
     """
 
     if x1 == None:
+        # initialization
         deriv = (fun(x0 + tol) - fun(x0 - tol)) / (2 * tol)
         x1 = x0 - fun(x0) / deriv
         return secant(fun, x0, x1=x1, tol=tol, maxiter=maxiter)
+
     else:
-        x = [x0, x1]
-        error = tol + 1
+        if record:
+            result = Minimizer()
+            result.set_algorithm("secant")
+            result.add_iter(x0)
+            result.add_iter(x1)
+
+        xprev = x0
+        x = x1
+        error = np.inf
         iterat = 0
+
         while error > tol and iterat < maxiter:
-            xf = x[-1] - (fun(x[-1]) * (x[-1] - x[-2])) / (
-                    fun(x[-1]) - fun(x[-2]))
-            error = np.abs(fun(xf))
+
+            xnew = x - (fun(x) * (x - xprev)) / (fun(x) - fun(xprev))
+            error = np.abs(fun(xnew))
             iterat += 1
-            x.append(xf)
-        x = np.array(x)
+            
+            xprev = x
+            x = xnew
+
+            if record:
+                result.add_iter(x)
+
+        if not record:
+            result = np.array(x)
 
         if iterat == maxiter:
             print("Warning, maximum number of iterations reached")
-        return [xf, x]
+        
+        return result
 
 def gradient_descent(fun, x0, step, tol=1e-5, maxiter=100):
     """
@@ -111,6 +170,7 @@ def gradient_descent(fun, x0, step, tol=1e-5, maxiter=100):
     Output:
         xf - final position of minimum
         x - list of used values
+    Needs to be updated
     """
 
     x = [x0]
@@ -144,108 +204,35 @@ def fdjac(f, x0, delta=1e-4):
     Output:
         J - jacobian matrix
     """
-    n = len(x0)
-    try:
-        m = len(f(x0))
-    except TypeError:
-        m = 1
+    n = mla.get_length(x0)
+    m = mla.get_length(f(x0))
+    
     J = np.zeros([m,n])
 
     ej = np.zeros(np.shape(x0))
-    for j in range(n):
-        ej[j] = 1
-        J[:,j] = ( f(x0 + delta*ej) - f(x0 - delta*ej) ) / (2 * delta)
-        ej[j] = 0
 
+    if n > 1:
+        for j in range(n):
+            ej[j] = 1
+            J[:,j] = ( f(x0 + delta*ej) - f(x0 - delta*ej) ) / (2 * delta)
+            ej[j] = 0
+    else:
+        J = (f(x0 + delta) - f(x0 - delta)) / (2 * delta)
+
+    if m == 1 or n == 1:
+        J = J.flatten()
     return J
 
-def levenberg(fun, x0, y=None, jac=None, tol=1e-7, maxiter=100):
-    """
-    Levenberg solver for least squares and minimization
-    Also useful for rootfinding (reformat as rootfinding problem
-
-    Input:
-        fun - callable objective function
-        x0 - initial guess
-        y - optional - function being approximated in least squares
-        jac - optional - jacobian matrix function
-        tol - optional - tolerance in minimum location
-        maxiter - optional - maximum allowed number of iterations
-    Output:
-        x - approximate location of minimum
-    """
-
-    if y is None:
-        y = np.zeros(np.shape(fun(x0)))
-
-    # determine working sizes
-    try:
-        m = len(fun(x0))
-    except TypeError:
-        m = 1
-    try:
-        n = len(x0)
-    except TypeError:
-        n = 1
-
-    # setup for looping
-    lam = 100
-    iter = 0
-
-    # clean x
-    x = np.matrix(x0)
-    [l, k] = np.shape(x)
-    if k > 1:
-        x = np.transpose(x)
-    error = np.inf
-    # build jacobian matrix
-    if jac is not None:
-        J = jac(x)
-    else:
-        J = fdjac(fun, x)
-    # right hand side
-    r = y - fun(x)
-
-    # minimization loop
-    while iter < maxiter and error > tol:
-
-        # build and solve linear system
-        A = np.matmul(np.transpose(J), J) + lam * np.eye(n)
-        r = np.matrix(r)
-        b = np.matmul(np.transpose(J), r)
-        delta = mla.linalg_solve(A, b)
-
-        # update guess
-        xnew = x + delta
-
-        # check if the solution is better
-        rnew = y - fun(xnew)
-        if la.norm(rnew) < la.norm(r):
-            # accept
-            x = xnew
-            r = rnew
-            iter += 1
-            lam /= 10       # closer to newton
-            # update jacobian
-            J = fdjac(fun, x)
-            error = la.norm(delta,1)
-        else:
-            # reject, maintain position
-            lam *= 4        # closer to gradient descent
-    if iter == maxiter:
-        print("Warning, maximum number of iterations reached")
-    print(iter)
-    return x
 
 
-f = lambda x: np.power(la.norm(x),2)
-x0 = np.array([1,1])
-x0 = np.matrix(x0)
-x0 = np.transpose(x0)
 
-[xf, xvals, errors] = newton(f, x0, tol=1e-16)
-print(xf)
-print(len(xvals))
+f_scalar = lambda x: np.power(x, 2) - x
+dfdx_s = lambda x: 2 * x - 1
+x0s = 10
 
-xl = levenberg(f, x0, tol=1e-16)
-print(xl)
+A = np.array([[-2, 1], [3, -4]])
+c = np.array([-3, 1])
+f_vector = lambda x: np.dot(x, np.squeeze(np.asarray(mla.matmul(A, x)))) - np.dot(c, x)
+jac = lambda x: mla.matmul(A, x) - c
+x0v = np.array([-2, 0])
+
