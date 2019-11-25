@@ -414,3 +414,36 @@ def compute_weights_order(x, cur_index, derivative_wanted, order_wanted):
 
     indices = [lower_index, higher_index]
     return compute_weights(x, cur_index, indices, derivative_wanted)
+
+
+def rk3(fun, init, tspan, num_nodes):
+    """
+    3rd order Runge Kutta method (explicit)
+    
+    Input:
+        fun - ode fun (callable)
+        init - initial condition
+        tspan - [t0, tf]
+        num_nodes - integer - number of time nodes
+    Output:
+        time - time nodes 
+        vals - y values at time nodes
+    """
+    
+    init = np.array(init)
+    m = len(init)
+    
+    time = np.linspace(tspan[0], tspan[1], num_nodes+1)
+    dt = (tspan[1] - tspan[0]) / num_nodes
+    
+    vals = np.zeros([m, num_nodes+1])
+    vals[:, 0] = init
+    
+    for i in range(num_nodes):
+        stage1 = fun(time[i], vals[:,i])
+        stage2 = fun(time[i+1], vals[:,i] + dt*stage1)
+        stage3 = fun(time[i] + 0.5*dt, vals[:,i] + 0.25*dt*(stage1 + stage2))
+        
+        vals[:,i+1] = vals[:,i] + dt / 6 * (stage1 + stage2 + 4*stage3)
+    
+    return [time, vals]
