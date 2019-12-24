@@ -473,3 +473,26 @@ def grid_refine(xspan, error_fun, tol=1e-6, n_init=10, max_iter=10):
     print("total iterations: ", it)
     return x
         
+def refine_x(x_curr, refine_locs):
+    """
+    Refine the x positions at the designated locations
+    
+    Input:
+        x_curr - numpy array of current x positions
+        refine_locs - list of locations to refine
+    Output:
+        x_new - refined x positions
+    """
+    
+    x_list = list(x_curr)
+    indices = np.arange(0, len(x_list))
+    count = 0
+    
+    for ind in indices[refine_locs]:
+        if ind == 0 or ind == len(x_list) - 1:
+            continue
+        else:
+            left_pos = 0.5 * (x_curr[ind] + x_curr[ind - 1])
+            x_list.insert(ind + count, left_pos)
+            count += 1
+    return np.array(x_list)
