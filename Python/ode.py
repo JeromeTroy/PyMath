@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 import scipy.integrate as ode
 
 from nonlinsolve import newton
-from nonlinsolve import secant
-from nonlinsolve import gradient_descent
 from linalg import build_vandermonde
 
 def forward_euler(fun, init, tspan, num_nodes):
@@ -292,7 +290,7 @@ def ode12s(fun, init, tspan, tol=1e-5):
     return [time, vals]
 
 
-def diffmat(x, num_nodes=9, der_wanted=1):
+def diffmat(x, der_wanted=1, order_wanted=2):
     """
     Build a differentiation matrix
 
@@ -305,37 +303,16 @@ def diffmat(x, num_nodes=9, der_wanted=1):
     """
 
     N = len(x)
-    xi = np.linspace(-1, 1, N)
 
     Dx = np.zeros([N, N])
-
-    scale = 2 / (np.max(x) - np.min(x))
-
-    # verify centered differences
-    if num_nodes % 2 == 0:
-        num_nodes += 1
-
-    if num_nodes > N:
-        num_nodes = N
-
 
     for index in range(N):
 
         # determine locations to use for approximation
-        index_range = [index - int((num_nodes - 1) / 2),
-                        index + int((num_nodes - 1) / 2)]
-        if index_range[0] < 0:
-            index_range[1] += abs(index_range[0]) + der_wanted-1
-            index_range[0] = 0
-        elif index_range[1] >= len(x):
-            index_range[0] -= abs(len(x) - index_range[1]) + 1 + der_wanted-1
-            index_range[1] = len(x) - 1
+        indices = compute_indices_order(x, index, der_wanted, order_wanted)
+        weights = compute_weights(x, index, [indices[0], indices[-1]], der_wanted)
+        Dx[index, indices[0]:indices[-1]+1] = weights
 
-
-        weights = compute_weights(xi, index, index_range, der_wanted)
-        Dx[index, index_range[0]:index_range[1]+1] = weights
-
-    Dx *= np.power(scale, der_wanted)
     return Dx
 
 def compute_weights(x, cur_index, index_range, derivative_wanted):
@@ -369,7 +346,7 @@ def compute_weights(x, cur_index, index_range, derivative_wanted):
     weights = la.solve(V, b)
     return weights
 
-def compute_weights_order(x, cur_index, derivative_wanted, order_wanted):
+def compute_indices_order(x, cur_index, derivative_wanted, order_wanted):
     """
     Compute weights given an order of accuracy desired
 
@@ -390,13 +367,15 @@ def compute_weights_order(x, cur_index, derivative_wanted, order_wanted):
 
     if derivative_wanted % 2 == 0 and cur_index > sides and len(x) - cur_index - 1 > sides:
         # even derivative, interior point
-        num_eq -= 2
+        #num_eq -= 2
         sides = int(num_eq / 2)
     elif num_eq > len(x):
         # too many equation required
         print("Warning, order desired too high for number of grid points")
         num_eq = len(x)
         sides = int(len(x) / 2)
+        true_accuracy = num_eq - derivative_wanted
+        print("Resulting accuracy: ", true_accuracy)
 
     # bounds on indices
     lower_index = cur_index - sides
@@ -413,7 +392,7 @@ def compute_weights_order(x, cur_index, derivative_wanted, order_wanted):
         lower_index = higher_index - num_eq
 
     indices = [lower_index, higher_index]
-    return compute_weights(x, cur_index, indices, derivative_wanted)
+    return indices
 
 
 def rk3(fun, init, tspan, num_nodes):
@@ -447,3 +426,50 @@ def rk3(fun, init, tspan, num_nodes):
         vals[:,i+1] = vals[:,i] + dt / 6 * (stage1 + stage2 + 4*stage3)
     
     return [time, vals]
+
+
+def grid_refine(xspan, error_fun, tol=1e-6, n_init=10, max_iter=10):
+    """
+    Refine a grid
+    
+    Input:
+        xspan - [a, b]
+        error_fun - callable, parameters x, dx, gives the error of the discretization
+    Optional:
+        tol - tolerance value for error, defaults to 10^-6
+        n_init - initial number of x points, defaults to 10
+        max_iter - maximum number of allowed iterations, defaults to 10
+    Output:
+        x - refined x positions
+    """
+    
+    # loop preliminaries
+    it = 0
+    x = np.linspace(xspan[0], xspan[1], n_init)
+    dx = x[1] - x[0]
+    
+    # is it good enough?
+    err = error_fun(x, dx)
+    refine_locs = err > tol
+    
+    refine = np.sum(refine_locs) > 0
+    
+    # refinement loop
+    while refine:
+        # refine positions
+        x = refine_x(x, refine_locs)
+        
+        dx /= 2
+        # update error and where needs to be refined
+        err = error_fun(x, dx)
+        refine_locs = err > tol
+        refine = np.sum(refine_locs) > 0
+        
+        # do not exceed max_iter iterations
+        it += 1
+        if it > max_iter:
+            print("Warning, maximum number of refinements reached")
+            break
+    print("total iterations: ", it)
+    return x
+        
