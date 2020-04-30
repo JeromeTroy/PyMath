@@ -18,23 +18,17 @@ package.
 
 import numpy as np
 import numpy.linalg as la
-import matplotlib.pyplot as plt
 
-def get_length(vec):
+def shape(arr):
     """
-    Wrapper for getting length of vector that may have length 1
-
+    Get the shape of an array
+    
     Input:
-        vec
-    Output:
-        n - length of the vector
+        arr
+    Ouptut:
+        shape - 2 x 1 array
     """
-    try:
-        n = len(vec)
-    except TypeError:
-        # scalar
-        n = 1
-    return n
+    return np.shape(np.array(arr))
 
 def matmul(m1, m2):
     """
@@ -47,11 +41,17 @@ def matmul(m1, m2):
     """
 
     # numpy matrix multiplication
-    try:
-        m = m1 @ m2
-    except:
+    
+    # verify sizes
+    
+    size1 = shape(m1)
+    size2 = shape(m2)
+    
+    if len(size1) == 0 or len(size2) == 0:
+        # one of the values is a scalar
         m = m1 * m2
-
+    else:
+        m = m1 @ m2
     return m
 
 
@@ -228,6 +228,57 @@ def build_vandermonde(x, max_power):
     V = np.power(V, powers.T)
 
     return V
+
+
+def solve(A, b):
+    """
+    Wrapper/dispatcher for solving a linear system
+
+    Input:
+        A - matrix to invert
+        b - right hand side vector
+    Output:
+        x - solution to Ax = b
+    """
+    
+    success = False
+    
+    sizeA = shape(A)
+    sizeb = shape(b)
+    
+    # matrix solver
+    if len(sizeA) > 1:
+        # square matrix, standard solving
+        if sizeA[0] == sizeA[1]:
+            try:
+                x = np.linalg.solve(A, b)
+                success = True
+            except:
+                success = False
+        # no success yet, or more equations than unknowns - QR
+        if not success or sizeA[0] > sizeA[1]:
+            [Q, R] = np.linalg.qr(A)
+            tmp = matmul(Q.T, b)
+            # solve upper triangular system
+            try:
+                x = np.linalg.solve(R, tmp)
+                success = True
+            except:
+                x = backward_substitute(R, tmp)
+                success = (np.sum(np.isinf(x)) == 0)
+        # no success yet, or more unknowns than equations - SVD
+        if not success or sizeA[0] < sizeA[1]:
+            [U, S, V] = np.linalg.svd(A)
+            tmp = matmul(U.T, b)
+            tmp2 = np.zeros(n)
+            tmp2[:m] = tmp / S           # pointwise division 
+            x = matmul(V.T, tmp2)
+    # vector solving
+    else:
+        x = b / A
+    
+    return x
+
 
 
 def linalg_solve(A, b):

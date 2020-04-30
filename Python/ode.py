@@ -8,11 +8,18 @@ Created on Sun Aug 25 16:02:07 2019
 
 import numpy as np
 import numpy.linalg as la
+from scipy.special import factorial
 import matplotlib.pyplot as plt
 import scipy.integrate as ode
 
-from nonlinsolve import newton
-from linalg import build_vandermonde
+import linalg as mla
+
+
+
+EPS = 1e-16
+
+
+# EXPLICIT METHODS
 
 def forward_euler(fun, init, tspan, num_nodes):
     """
@@ -41,131 +48,9 @@ def forward_euler(fun, init, tspan, num_nodes):
 
     return [time, vals]
 
-def ode12(fun, init, tspan, tol=1e-5):
-    """
-    Adaptive ode solver using forward euler and RK2
 
-    Input:
-        fun - ode function
-        init - initial condition
-        tspan - [t0, tf]
-        tol - allowed tolerance value
-    Output:
-        time - time nodes used
-        vals - y values at nodes
-    """
-
-    cur_time = tspan[0]
-    final_time = tspan[1]
-
-    times = [cur_time]
-    init = np.array(init)
-    vals = [init]
-
-    step = (tspan[1] - tspan[0]) / 100
-
-    flag = False
-
-    while cur_time <= final_time:
-        stage1 = fun(cur_time, vals[-1])
-        stage2 = fun(cur_time + 0.5 * step, vals[-1] + 0.5 * step * stage1)
-
-
-        lte = np.linalg.norm(stage2 - stage1)
-
-        if lte > tol:
-            step /= 2
-            flag = True
-            continue
-
-        elif lte < 0.2 * tol and not flag:
-            step *= 2
-            continue
-
-        else:
-            new_val = vals[-1] + step * stage2
-            vals.append(new_val)
-            cur_time += step
-            times.append(cur_time)
-            flag = False
-
-    if cur_time < final_time:
-        step = final_time - cur_time
-        stage1 = fun(cur_time, vals[-1])
-        stage2 = fun(cur_time + 0.5 * step, vals[-1] + 0.5 * step * stage1)
-        final_val = vals[-1] + step * stage2
-        vals.append(final_vals)
-        times.append(final_time)
-
-    vals = np.array(vals)
-    times = np.array(times)
-    return [times, vals]
-
-
-
-def deriv(x, y):
-    """
-    Compute the first derivative (second order accuracy)
-
-    Input:
-        x - x nodes
-        y - y nodes
-    Output:
-        dydx - derivative approximation at x nodes
-    """
-
-    h = x[1:] - x[:-1]
-    dydx = np.zeros(np.shape(y))
-
-    backward = (y[1:-1] - y[:-2]) / (x[1:-1] - x[:-2])
-    forward = (y[1:-1] - y[2:]) / (x[1:-1] - x[2:])
-    weights = 2 * (x[1:-1] - x[:-2]) / (x[2:] - x[:-2])
-    dydx[1:-1] = 0.5 * (weights * forward + (2 - weights) * backward)
-
-    frontweight = (2 * x[0] - x[1] - x[2]) / (x[0] - x[2])
-    frontback = (y[0] - y[1]) / (x[0] - x[1])
-    frontfor = (y[1] - y[2]) / (x[1] - x[2])
-    dydx[0] = frontweight * frontback + (1 - frontweight) * frontfor
-
-    backweight = (2*x[-1] - x[-2] - x[-3]) / (x[-1] - x[-3])
-    backback = (y[-1] - y[-2]) / (x[-1] - x[-2])
-    backfor = (y[-2] - y[-3]) / (x[-2] - x[-3])
-    dydx[-1] = backweight * backback + (1 - backweight) * backfor
-
-    return dydx
-
-
-def deriv2(x, y):
-    """
-    Compute the second derivative (first order accurate)
-
-    Input:
-        x - x nodes
-        y - y nodes
-    Output:
-        d2ydx2 - second derivative approximation
-    """
-
-    d2ydx2 = np.zeros(np.shape(y))
-    acenter = 2 * (x[1:-1] - x[:-2]) / (x[2:] - x[:-2])
-    ccenter = 2 * (x[2:] - x[1:-1]) / (x[2:] - x[:-2])
-    bcenter = -2
-
-    d2ydx2[1:-1] = (acenter * y[2:] + bcenter * y[1:-1] + ccenter * y[:-2]) / \
-        ((x[2:] - x[1:-1]) * (x[1:-1] - x[:-2]))
-
-    afor = 2
-    bfor = 2 * (x[2] - x[0]) / (x[1] - x[2])
-    cfor = -2 * (x[1] - x[0]) / (x[1] - x[2])
-    d2ydx2[0] = (afor * y[0] + bfor * y[1] + cfor * y[2]) / (
-            (x[1] - x[0]) * (x[2] - x[0]))
-    abac = 2
-    bbac = 2 * (x[-3] - x[-1]) / (x[-2] - x[-3])
-    cbac = -2 * (x[-2] - x[-1]) / (x[-2] - x[-3])
-    d2ydx2[-1] = (abac * y[-1] + bbac * y[-2] + cbac * y[-3]) / (
-            (x[-2] - x[-1]) * (x[-3] - x[-1]))
-
-    return d2ydx2
+    
+# IMPLICIT METHODS
 
 def backward_euler(fun, init, tspan, num_nodes):
     """
@@ -218,183 +103,165 @@ def crank_nicolson(fun, init, tspan, num_nodes):
 
     return [time, vals]
 
-def ode12s(fun, init, tspan, tol=1e-5):
-    """
-    Adaptive ODE solver for stiff problems using forward euler and
-    crank-nicolson
 
+# building differentiation matrices
+
+# computing weights
+def get_weights(delta, der=1, order=2):
+    """
+    Compute weights for function values to approximate derivatives
+    
     Input:
-        fun - callable function
-        init - initial condition
-        tspan - [t0, tf]
+        delta - vector of finite differences
     Optional:
-        tol - tolerance value, default 1e-5
+        der - derivative wanted, integer
+        order - order of accuracy wanted, integer
     Output:
-        time - time nodes used
-        vals - function values
+        w - weights for function values, vector
     """
+    
+    # build linear system
+    mat_size = len(delta)
+    A = np.tile(delta, [mat_size, 1])
+    powers = np.tile(np.arange(0, mat_size), [mat_size, 1]).T 
+    denom = factorial(powers)
+    A = np.divide(np.power(A, powers), denom)
+    
+    # right hand side
+    e = np.zeros(mat_size)
+    e[der] = 1
+    
+    # compute weights
+    w = np.linalg.solve(A, e)
+    return w
 
-    cur_time = tspan[0]
-    final_time = tspan[1]
-
-    time = [cur_time]
-    vals = [init]
-
-    step = (tspan[1] - tspan[0]) / 100
+# determining weighting locations
+def select_nodes(length, node, num_nodes, quiet=False):
+    """
+    Select nodes based on a specified node and width
+    
+    Input:
+        length - integer, length of vector to index
+        node - integer, current index
+        num_nodes - integer - radius of nodes needed (to left and right)
+    Optional:
+        quiet - boolean, indicates whether to display output and progress
+    Output:
+        lower, upper - integers, indices to start and end at
+    """
+    
+    # initial guesses
+    lower = node - num_nodes
+    upper = node + num_nodes + 1
+    ###################################
+    #print("lower, upper: ", lower, upper)
+    ####################################
+    # unshifted
     flag = False
+    if lower < 0:
+        # went too far to left, shift to right
+        if not quiet:
+            print("Shifting right")
+        extras = abs(lower)
+        lower = 0
+        upper += extras
+        # shifted once
+        flag = True
 
-    while cur_time < final_time:
-        #temp_fun_be = lambda u: u - step * fun(time[-1] + step, u) - vals[-1]
-        #[be_step, tmp] = newton(temp_fun_be, vals[-1])
-
-        temp_fun_cn = lambda u: u - 0.5 * step * fun(time[-1] + step, u) - (
-                vals[-1] + 0.5 * step * fun(time[-1], vals[-1]))
-        [cn_step, tmp] = newton(temp_fun_cn, vals[-1])
-
-        #lte = np.abs(cn_step - be_step) / step
-
-        lte = 0.5 * np.abs(fun(time[-1], vals[-1]) - fun(time[-1] + step, cn_step))
-
-        if lte > tol:
-            step /= 2
+    if upper > length:
+        # too far to right, shift left 
+        if not flag:
+            # have not already shifted right
+            if not quiet:
+                print("Shifting left")
+            extras = upper - length
+            lower -= extras
+            upper = length
             flag = True
-            continue
-
-        elif lte < 0.7 * tol and not flag:
-            step *= 2
-            continue
-
+            if lower < 0:
+                # too many nodes required
+                if not quiet:
+                    print("Warning: too many nodes requested, defaulting to whole interval")
+                lower = 0
         else:
-            new_val = cn_step
-            vals.append(new_val)
-            cur_time += step
-            time.append(cur_time)
-            flag = False
+            # shifted right before, too many nodes requested
+            if not quiet:
+                print("Warning: too many nodes requested, defaulting to whole interval")
+            lower = 0
+            upper = length
+    ##############################################
+    #print("updated: lower, upper: ", lower, upper)
+    ##############################################
+    return lower, upper
 
-    if cur_time != final_time or np.isinf(time[-1]):
-
-        if np.isinf(time[-1]) or cur_time > final_time:
-            time = time[:-1]
-            vals = vals[:-1]
-
-        step = final_time - time[-1]
-        temp_fun = lambda u: u - 0.5 * step * fun(cur_time + step, u) - (
-                vals[-1] + 0.5 * step * fun(cur_time, vals[-1]))
-        [final_val, tmp] = newton(temp_fun, vals[-1])
-        vals.append(final_val)
-        time.append(final_time)
-
-    time = np.array(time)
-    vals = np.array(vals)
-
-    return [time, vals]
-
-
-def diffmat(x, der_wanted=1, order_wanted=2):
+# build the differentiation matrix
+def diffmat(x, der=1, order=2, quiet=True):
     """
     Build a differentiation matrix
-
+    
     Input:
-        x - nodes at which function values are given
-        num_nodes - number of nodes to use in approximation, default 9
-        der_wanted - order derivative wanted, default 1
+        x - nodes on which function is defined
+    Optional:
+        der - derivative wanted, integer, defaults to 1
+        order - order of accuracy, integer, defaults to 2
+        quiet - boolean, indicates if output is expressed, defaults to False
     Output:
-        Dx - differentiation matrix
+        D - differentiation matrix 
     """
+    
+    # matrix of finite differences
+    Delta_mat = np.tile(x, [len(x), 1]).T
+    Delta_mat -= Delta_mat.T 
 
-    N = len(x)
+    # allocate space for D
+    D = np.zeros(np.shape(Delta_mat))
+    
+    # number of nodes necessary for requirements
+    if der % 2 == 1:
+        num_nodes = int((der + order - 1) / 2)
+    else:
+        num_nodes = int((der + order) / 2) - 1
+    
+    # iterate over each node
+    for node in range(len(x)):
+        # select necessary nodes
+        lower, upper = select_nodes(len(x), node, num_nodes, quiet=quiet)
+        # relavant finite differences
+        delta = Delta_mat[lower : upper, node]
+        ################################
+        #print(delta)
+        ################################
+        # finite difference weights
+        w = get_weights(delta, der=der, order=order)
+        
+        # input into D
+        D[node, lower : upper] = w
+    
+    return D
+            
+                
 
-    Dx = np.zeros([N, N])
 
-    for index in range(N):
-
-        # determine locations to use for approximation
-        indices = compute_indices_order(x, index, der_wanted, order_wanted)
-        weights = compute_weights(x, index, [indices[0], indices[-1]], der_wanted)
-        Dx[index, indices[0]:indices[-1]+1] = weights
-
-    return Dx
-
-def compute_weights(x, cur_index, index_range, derivative_wanted):
+def build_vandermonde(vals, power):
     """
-    Compute weights for function values to approximate a derivative
-
+    Build a vandermonde matrix
+    
     Input:
-        x - x nodes in use
-        cur_index - the index at which we want the derivative
-        allowed_indices - the indices used in the approximation
-        derivative_wanted - integer - the derivative order desired
+        vals - values to use
+        power - maximum power for system
     Output:
-        weights - function value weights
+        V - m x n matrix - m = len(vals), n = power + 1
     """
-
-    # number of points
-    n = index_range[1] - index_range[0] + 1
-
-    # RHS
-    b = np.zeros(n)
-    # specify derivative desired
-    b[derivative_wanted] = np.math.factorial(derivative_wanted)
-
-    end = index_range[1]+1      # python doesn't include last index by default
-    diffs = x[index_range[0]:end] - x[cur_index]
-
-    # build vandermonde system
-    V = build_vandermonde(diffs, n-1)
-
-    # solve for weights
-    weights = la.solve(V, b)
-    return weights
-
-def compute_indices_order(x, cur_index, derivative_wanted, order_wanted):
-    """
-    Compute weights given an order of accuracy desired
-
-    Input:
-        x - x nodes in use
-        cur_index - current index in use
-        derivative_wanted - which order derivative
-        order_wanted - order of error wanted
-    Output:
-        weights - weights for function values
-    """
-
-    # theoretical total number of equations
-    num_eq = derivative_wanted + order_wanted
-
-    # how many points to sides
-    sides = int(num_eq / 2)
-
-    if derivative_wanted % 2 == 0 and cur_index > sides and len(x) - cur_index - 1 > sides:
-        # even derivative, interior point
-        #num_eq -= 2
-        sides = int(num_eq / 2)
-    elif num_eq > len(x):
-        # too many equation required
-        print("Warning, order desired too high for number of grid points")
-        num_eq = len(x)
-        sides = int(len(x) / 2)
-        true_accuracy = num_eq - derivative_wanted
-        print("Resulting accuracy: ", true_accuracy)
-
-    # bounds on indices
-    lower_index = cur_index - sides
-    higher_index = cur_index + sides
-
-    # extending too far to left, revert to interior
-    if lower_index < 0:
-        lower_index = 0
-        higher_index = num_eq
-
-    # extending too far to right, revert to interior
-    elif higher_index >= len(x):
-        higher_index = len(x) - 1
-        lower_index = higher_index - num_eq
-
-    indices = [lower_index, higher_index]
-    return indices
-
-
+    
+    n = power + 1
+    m = len(vals)
+    V = np.tile(vals, [n, 1]).T
+    powers = np.arange(0, n)
+    powers_mat = np.tile(powers, [m, 1])
+    
+    V = np.power(V, powers_mat)
+    return V.T
+    
 def rk3(fun, init, tspan, num_nodes):
     """
     3rd order Runge Kutta method (explicit)
@@ -496,3 +363,181 @@ def refine_x(x_curr, refine_locs):
             x_list.insert(ind + count, left_pos)
             count += 1
     return np.array(x_list)
+
+
+def slp(p, q, f, bcs, xspan=[0, 1], order=2, adapt=True, n=8, tol=1e-6, max_refine=10):
+    """
+    Sturm - Liouville problem solver
+
+    Input:
+
+    Optional:
+
+    Output:
+        x - x nodes used, n x 1
+        u - u(x), n x 1
+    """
+
+    # determine x points
+
+    err_fun = lambda x, dx: slp_error(p, q, f, x, bcs, order=order)
+
+    refine = True
+    # refine x 
+    if adapt:
+        x = grid_refine(xspan, err_fun, tol=tol, n_init=n, max_iter=max_refine)
+    else:
+        while refine:
+            x = np.linspace(xspan[0], xspan[1], n)
+            error = (xspan[1] - xspan[0]) / (n + 1) * np.max(err_fun(x, dx))
+            refine = np.sum(error > tol) > 1
+            n *= 2
+
+    # solve 
+    u = solve_slp(p, q, f, x, bcs, order=order)
+
+    return x, u
+
+def solve_slp(p, q, f, x, bcs, order=2):
+    """
+    Solve a sturm-liouville problem numerically
+
+    Input:
+        p, q, f - Dx(p Dx u) + qu = f 
+        x - x positions
+        bcs - boundary conditions [alpha, beta, gamma] 0, 1 by row
+        order - orider of accuracy
+    Output:
+        u - u(x), n x 1 vector
+    """
+
+    # build SL problem
+    p_vec = p(x)
+    pavg = np.mean(p_vec)
+    if np.linalg.norm(pavg - p_vec) < EPS:
+        # p is identically 1
+        Dxx = diffmat(x, der_wanted=2, order_wanted=order)
+        Q = np.diagflat(q(x))
+        A = pavg * Dxx + Q
+    else:
+        # p is not 1
+        Dx = diffmat(x, der_wanted=1, order_wanted=order)
+
+        P = np.diagflat(p(x))
+        Q = np.diagflat(q(x))
+        A = Dx @ P @ Dx + Q
+
+    Dx = diffmat(x, der_wanted=1, order_wanted=order)
+
+    # augment with boundary conditions
+    A[0, :] = bcs[0, 1] * Dx[0, :] 
+    A[0, 0] += bcs[0, 0]
+    A[-1, :] = bcs[1, 1] * Dx[-1, :]
+    A[-1, -1] += bcs[1, 0]
+
+    # right hand side
+    f_vec = f(x)
+    f_vec[0] = bcs[0, 2]
+    f_vec[-1] = bcs[1, 2]
+
+
+    # solve
+    u = mla.linalg_solve(A, f_vec)
+
+    return u
+
+
+def slp_error(p, q, f, x, bcs, order=2):
+    """
+    Build error for sturm-liouville problem
+
+    Input:
+        p, q, f - Dx(p Dx u) + qu = f
+        x - x nodes
+    Optional:
+        order - order of accuracy, defaults to 2
+    Output:
+        error - error values at each x node
+    """
+
+    dx = np.zeros(np.shape(x))
+    dx[1:] = x[1:] - x[:-1]
+    dx[0] = dx[1]
+
+    p_vec = p(x)
+    pavg = np.mean(p_vec)
+
+    # error from discretization of operator
+    if np.linalg.norm(p_vec - pavg) < EPS:
+        # p is identically 1
+        D = diffmat(x, der_wanted=2+order, order_wanted=order)
+        error = pavg * np.power(dx, order) * (D @ f(x))
+    else:
+        # p is not one
+        D1 = diffmat(x, der_wanted=order-1, order_wanted=order)
+        D2 = diffmat(x, der_wanted=order, order_wanted=order)
+        fp = f(x) / p(x) 
+        fp[np.isnan(fp)] = 0
+        fp[np.isinf(fp)] = 0
+        pn = 1 / p(x)
+        pn[np.isnan(pn)] = 0
+        pn[np.isinf(pn)] = 0
+        error = np.power(dx, order) * (order * D1 @ fp + np.cumsum(f(x) * dx) * D2 @ pn)
+        
+    pn = 1 / p(x)
+    pn[np.isnan(pn)] = 0
+    pn[np.isinf(pn)] = 0
+    # error from boundary terms
+    Db = diffmat(x, der_wanted=order, order_wanted=order)
+    tmp = np.power(dx, order) * Db @ pn
+    error[0] = bcs[0, 1] * tmp[0]
+    error[-1] = bcs[1, 1] * tmp[-1]
+    
+    
+
+    return np.abs(error)
+    
+def verlet(fun, init_pos, init_vel, tspan, num_nodes):
+    """
+    Verlet's method for solving u'' = f(t, u)
+    
+    Input:
+        fun - rhs
+        init - [u(t = 0), v(t = 0)], where u is of interest, v is "velocity"
+        tspan - [tstart, tstop]
+        num_nodes - number of desired time nodes
+    Ouput:
+        time - time nodes used
+        U - u(t)
+    """
+    
+    # allocate space 
+    try:
+        U = np.zeros([len(init_pos), num_nodes])
+    except:
+        U = np.zeros([1, num_nodes])
+    
+    # time nodes 
+    time = np.linspace(tspan[0], tspan[1], num_nodes)
+    dt = time[1] - time[0]
+    
+    U[:, 0] = init_pos
+    
+    # get starting velocity, acceleration
+    vel = init_vel
+    acc = fun(time[0], U[:, 0])
+    acc_new = acc[:]
+    
+    # time stepping velocity verlet
+    for i in range(num_nodes-1):
+        # update position
+        U[:, i+1] = U[:, i] + vel * dt + 0.5 * acc * dt ** 2
+        
+        # update acceleration
+        acc_new = fun(time[i+1], U[:, i+1])
+        
+        # update velocity
+        vel += 0.5 * (acc + acc_new) * dt
+        acc = acc_new[:]
+        
+    return time, U
